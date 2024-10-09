@@ -369,6 +369,16 @@ class TrainerCallback:
         """
         pass
 
+
+    def on_step_end_with_batch_data(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """
+        Event called at the end of a training step. The batch input is also passed along.
+        If using gradient accumulation, one training step might take
+        several inputs.
+        """
+        pass
+
+
     def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         """
         Event called after an evaluation phase.
@@ -492,6 +502,9 @@ class CallbackHandler(TrainerCallback):
 
     def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
         return self.call_event("on_step_end", args, state, control)
+    
+    def on_step_end_with_batch_data(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, batch_data):
+        return self.call_event("on_step_end_with_batch_data", args, state, control, batch_data=batch_data)
 
     def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, metrics):
         control.should_evaluate = False
