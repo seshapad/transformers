@@ -286,7 +286,6 @@ SCHEDULER_NAME = "scheduler.pt"
 SCALER_NAME = "scaler.pt"
 FSDP_MODEL_NAME = "pytorch_model_fsdp"
 
-
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PyTorch, optimized for 🤗 Transformers.
@@ -2385,7 +2384,7 @@ class Trainer:
                     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
                 with self.accelerator.accumulate(model):
-                    tr_loss_step = self.training_step(model, inputs)
+                    tr_loss_step, outputs = self.training_step(model, inputs, return_outputs=True)
 
                 if (
                     args.logging_nan_inf_filter
@@ -2462,11 +2461,11 @@ class Trainer:
                     model.zero_grad()
                     self.state.global_step += 1
                     self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
-                    self.control = self.callback_handler.on_step_end(args, self.state, self.control)
-                    self.control = self.callback_handler.on_step_end_with_batch_data(args, 
-                                                                                     self.state, 
-                                                                                     self.control, 
-                                                                                     batch_data=inputs)
+                    self.control = self.callback_handler.on_step_end(args, 
+                                                                    self.state, 
+                                                                    self.control, 
+                                                                    batch_data=inputs,
+                                                                    outputs=outputs)
 
                     self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
                 else:
@@ -3458,7 +3457,7 @@ class Trainer:
 
         return ctx_manager
 
-    def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+    def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], return_outputs=False) -> (tuple[torch.Tensor, Any]|torch.Tensor):
         """
         Perform a training step on a batch of inputs.
 
@@ -3486,7 +3485,7 @@ class Trainer:
             return loss_mb.reduce_mean().detach().to(self.args.device)
 
         with self.compute_loss_context_manager():
-            loss = self.compute_loss(model, inputs)
+            loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
 
         del inputs
         if (
@@ -3511,7 +3510,7 @@ class Trainer:
         # For LOMO optimizers you need to explicitly use the learnign rate
         if self.args.optim in [OptimizerNames.LOMO, OptimizerNames.ADALOMO]:
             kwargs["learning_rate"] = self._get_learning_rate()
-
+        
         if self.args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
@@ -3521,7 +3520,8 @@ class Trainer:
         else:
             self.accelerator.backward(loss, **kwargs)
 
-        return loss.detach() / self.args.gradient_accumulation_steps
+        detached_loss = loss.detach() / self.args.gradient_accumulation_steps
+        return (detached_loss, outputs) if return_outputs else detached_loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """
