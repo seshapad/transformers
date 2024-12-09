@@ -493,8 +493,8 @@ class CallbackHandler(TrainerCallback):
     def on_substep_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
         return self.call_event("on_substep_end", args, state, control)
 
-    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl):
-        return self.call_event("on_step_end", args, state, control)
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, inputs, outputs):
+        return self.call_event("on_step_end", args, state, control, inputs=inputs, outputs=outputs)
 
     def on_evaluate(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, metrics):
         control.should_evaluate = False

@@ -1385,6 +1385,13 @@ class TrainingArguments:
             "Options: 'inputs', 'loss'."
         },
     )
+    include_for_step_callback: List[str] = field(
+        default_factory=list,
+        metadata={
+            "help": "Add additional data in the on_step_end callback."
+            "Options: 'inputs', 'outputs'."
+        },
+    )
     eval_do_concat_batches: bool = field(
         default=True,
         metadata={

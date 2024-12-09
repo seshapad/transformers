@@ -2519,7 +2519,7 @@ class Trainer:
                         else contextlib.nullcontext
                     )
                     with context():
-                        tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                        tr_loss_step, outputs = self.training_step(model, inputs, num_items_in_batch, return_outputs=True)
 
                     if (
                         args.logging_nan_inf_filter
@@ -2585,7 +2585,10 @@ class Trainer:
                         model.zero_grad()
                         self.state.global_step += 1
                         self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
-                        self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                        callback_kwargs = {}
+                        callback_kwargs["inputs"] = inputs if "inputs" in args.include_for_step_callback else None
+                        callback_kwargs["outputs"] = outputs if "output" in args.include_for_step_callback else None
+                        self.control = self.callback_handler.on_step_end(args, self.state, self.control, callback_kwargs)
                         self._maybe_log_save_evaluate(
                             tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval, start_time
                         )
@@ -3620,8 +3623,8 @@ class Trainer:
         return ctx_manager
 
     def training_step(
-        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], num_items_in_batch=None
-    ) -> torch.Tensor:
+        self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], num_items_in_batch=None, return_outputs=True
+    ) -> (tuple[torch.Tensor, Any]|torch.Tensor): 
         """
         Perform a training step on a batch of inputs.
 
@@ -3637,7 +3640,7 @@ class Trainer:
                 argument `labels`. Check your model's documentation for all accepted arguments.
 
         Return:
-            `torch.Tensor`: The tensor with training loss on this batch.
+            `(tuple[torch.Tensor, Any]|torch.Tensor)`: The tensor with training loss on this batch and/or the output used for computing the loss.
         """
         model.train()
         if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
@@ -3650,9 +3653,9 @@ class Trainer:
 
         with self.compute_loss_context_manager():
             if self.model_accepts_loss_kwargs:
-                loss = self.compute_loss(model, inputs)
+                loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
             else:
-                loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+                loss, outputs = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch, return_outputs=True)
 
         del inputs
         if (
@@ -3687,9 +3690,11 @@ class Trainer:
         else:
             self.accelerator.backward(loss, **kwargs)
             # Finally we need to normalize the loss for reporting
+            detached_loss = loss.detach()
             if num_items_in_batch is None:
-                return loss.detach() / self.args.gradient_accumulation_steps
-            return loss.detach()
+                normalized_detached_loss = detached_loss / self.args.gradient_accumulation_steps
+                return (normalized_detached_loss, outputs) if return_outputs else normalized_detached_loss
+            return (detached_loss, outputs) if return_outputs else detached_loss
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         """
